@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TexelForge - Real-Time GLSL Bayer Dither &amp; Voxel Raymarcher</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #090b10;
+      color: #f1f5f9;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+    aside {
+      background: #111520;
+      border-right: 1px solid #1e293b;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+    .sub { font-size: 12px; color: #94a3b8; line-height: 1.4; }
+    label { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; margin-bottom: 4px; }
+    input[type="range"], select {
+      width: 100%;
+      background: #090b10;
+      color: #f1f5f9;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 6px;
+    }
+    textarea {
+      flex: 1;
+      min-height: 210px;
+      background: #07090e;
+      color: #38bdf8;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: inherit;
+      font-size: 11px;
+      line-height: 1.45;
+      resize: none;
+    }
+    button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    main {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #05070b;
+      position: relative;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+    .stats {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div>
+      <h1>TexelForge v1.0</h1>
+      <div class="sub">Real-time WebGL ordered Bayer 4x4 texel quantizer &amp; signed-distance raymarcher</div>
+    </div>
+    <div>
+      <label><span>Texel Pixel Scale</span><span id="vScale">4 px</span></label>
+      <input id="scale" type="range" min="1" max="12" value="4" />
+    </div>
+    <div>
+      <label><span>Bayer Dither Spread</span><span id="vDither">0.42</span></label>
+      <input id="dither" type="range" min="0" max="100" value="42" />
+    </div>
+    <div>
+      <label><span>Palette Quantization Levels</span><span id="vLevels">6</span></label>
+      <input id="levels" type="range" min="2" max="16" value="6" />
+    </div>
+    <div>
+      <label><span>SDF Geometry Preset</span></label>
+      <select id="preset">
+        <option value="0">Torus Knot + Octahedron Lattice</option>
+        <option value="1">Menger Sponge Voxel Tunnel</option>
+        <option value="2">Gyroid Ferrofluid Iso-Surface</option>
+      </select>
+    </div>
+    <textarea id="shaderSrc" spellcheck="false">// Ordered 4x4 Bayer Matrix Texel Pass
+float bayer4(vec2 p) {
+  ivec2 i = ivec2(mod(p, 4.0));
+  int idx = i.y * 4 + i.x;
+  float m[16] = float[16](
+     0.0,  8.0,  2.0, 10.0,
+    12.0,  4.0, 14.0,  6.0,
+     3.0, 11.0,  1.0,  9.0,
+    15.0,  7.0, 13.0,  5.0
+  );
+  return (m[idx] / 16.0) - 0.5;
+}</textarea>
+    <button id="exportBtn">Export Quantized PNG Snapshot</button>
+  </aside>
+  <main>
+    <canvas id="gl"></canvas>
+    <div class="stats" id="fpsBox">60 FPS // 4x4 BAYER TEXEL GRID</div>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("gl");
+    const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
+
+    const vs = `
+      attribute vec2 p;
+      void main() { gl_Position = vec4(p, 0.0, 1.0); }
+    `;
+    const fs = `
+      precision highp float;
+      uniform vec2 u_res;
+      uniform float u_time;
+      uniform float u_scale;
+      uniform float u_dither;
+      uniform float u_levels;
+      uniform float u_preset;
+
+      float bayer(vec2 c) {
+        vec2 p = floor(mod(c, 4.0));
+        float idx = p.y * 4.0 + p.x;
+        if (idx < 0.5) return 0.0/16.0 - 0.5;
+        if (idx < 1.5) return 8.0/16.0 - 0.5;
+        if (idx < 2.5) return 2.0/16.0 - 0.5;
+        if (idx < 3.5) return 10.0/16.0 - 0.5;
+        if (idx < 4.5) return 12.0/16.0 - 0.5;
+        if (idx < 5.5) return 4.0/16.0 - 0.5;
+        if (idx < 6.5) return 14.0/16.0 - 0.5;
+        if (idx < 7.5) return 6.0/16.0 - 0.5;
+        if (idx < 8.5) return 3.0/16.0 - 0.5;
+        if (idx < 9.5) return 11.0/16.0 - 0.5;
+        if (idx < 10.5) return 1.0/16.0 - 0.5;
+        if (idx < 11.5) return 9.0/16.0 - 0.5;
+        if (idx < 12.5) return 15.0/16.0 - 0.5;
+        if (idx < 13.5) return 7.0/16.0 - 0.5;
+        if (idx < 14.5) return 13.0/16.0 - 0.5;
+        return 5.0/16.0 - 0.5;
+      }
+
+      mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+      float map(vec3 p) {
+        p.xz *= rot(u_time * 0.45);
+        p.xy *= rot(u_time * 0.31);
+        if (u_preset < 0.5) {
+          vec2 q = vec2(length(p.xz) - 1.15, p.y);
+          return length(q) - 0.38 + 0.08 * sin(8.0 * atan(p.z, p.x) + u_time * 2.0);
+        } else if (u_preset < 1.5) {
+          vec3 q = abs(p) - vec3(1.0);
+          return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.15;
+        } else {
+          return (abs(dot(sin(p*2.6), cos(p.zxy*2.6))) - 0.35) * 0.35;
+        }
+      }
+
+      vec3 calcNormal(vec3 p) {
+        vec2 e = vec2(0.002, 0.0);
+        return normalize(vec3(
+          map(p + e.xyy) - map(p - e.xyy),
+          map(p + e.yxy) - map(p - e.yxy),
+          map(p + e.yyx) - map(p - e.yyx)
+        ));
+      }
+
+      void main() {
+        vec2 texCoord = floor(gl_FragCoord.xy / u_scale) * u_scale;
+        vec2 uv = (texCoord - 0.5 * u_res) / u_res.y;
+        vec3 ro = vec3(0.0, 0.0, -3.2);
+        vec3 rd = normalize(vec3(uv, 1.35));
+
+        float t = 0.0;
+        vec3 col = vec3(0.04, 0.06, 0.11);
+        for (int i = 0; i < 64; i++) {
+          vec3 p = ro + rd * t;
+          float d = map(p);
+          if (d < 0.002) {
+            vec3 n = calcNormal(p);
+            vec3 l1 = normalize(vec3(0.8, 0.9, -0.7));
+            vec3 l2 = normalize(vec3(-0.7, -0.5, -0.5));
+            float diff1 = max(dot(n, l1), 0.0);
+            float diff2 = max(dot(n, l2), 0.0);
+            float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.5);
+            col = vec3(0.10, 0.45, 0.85) * diff1 + vec3(0.95, 0.45, 0.18) * diff2 + vec3(0.25, 0.88, 0.75) * rim;
+            break;
+          }
+          if (t > 8.0) break;
+          t += d;
+        }
+
+        float b = bayer(floor(gl_FragCoord.xy / u_scale));
+        col += b * u_dither;
+        col = floor(clamp(col, 0.0, 1.0) * u_levels) / u_levels;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    function compile(type, src) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return s;
+    }
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog);
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+    const locP = gl.getAttribLocation(prog, "p");
+    gl.enableVertexAttribArray(locP);
+    gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
+
+    const uRes = gl.getUniformLocation(prog, "u_res");
+    const uTime = gl.getUniformLocation(prog, "u_time");
+    const uScale = gl.getUniformLocation(prog, "u_scale");
+    const uDither = gl.getUniformLocation(prog, "u_dither");
+    const uLevels = gl.getUniformLocation(prog, "u_levels");
+    const uPreset = gl.getUniformLocation(prog, "u_preset");
+
+    const scaleEl = document.getElementById("scale");
+    const ditherEl = document.getElementById("dither");
+    const levelsEl = document.getElementById("levels");
+    const presetEl = document.getElementById("preset");
+
+    scaleEl.oninput = () => document.getElementById("vScale").textContent = scaleEl.value + " px";
+    ditherEl.oninput = () => document.getElementById("vDither").textContent = (ditherEl.value / 100).toFixed(2);
+    levelsEl.oninput = () => document.getElementById("vLevels").textContent = levelsEl.value;
+
+    document.getElementById("exportBtn").onclick = () => {
+      const a = document.createElement("a");
+      a.download = "texelforge_snapshot.png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+
+    function render(t) {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w; canvas.height = h;
+        gl.viewport(0, 0, w, h);
+      }
+      gl.uniform2f(uRes, w, h);
+      gl.uniform1f(uTime, t * 0.001);
+      gl.uniform1f(uScale, parseFloat(scaleEl.value));
+      gl.uniform1f(uDither, parseFloat(ditherEl.value) / 100.0);
+      gl.uniform1f(uLevels, parseFloat(levelsEl.value));
+      gl.uniform1f(uPreset, parseFloat(presetEl.value));
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
