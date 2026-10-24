@@ -1,286 +1,1333 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TexelForge - Real-Time GLSL Bayer Dither &amp; Voxel Raymarcher</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: #090b10;
-      color: #f1f5f9;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      height: 100vh;
-      overflow: hidden;
-    }
-    aside {
-      background: #111520;
-      border-right: 1px solid #1e293b;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      overflow-y: auto;
-    }
-    h1 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
-    .sub { font-size: 12px; color: #94a3b8; line-height: 1.4; }
-    label { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; margin-bottom: 4px; }
-    input[type="range"], select {
-      width: 100%;
-      background: #090b10;
-      color: #f1f5f9;
-      border: 1px solid #334155;
-      border-radius: 4px;
-      padding: 6px;
-    }
-    textarea {
-      flex: 1;
-      min-height: 210px;
-      background: #07090e;
-      color: #38bdf8;
-      border: 1px solid #1e293b;
-      border-radius: 6px;
-      padding: 10px;
-      font-family: inherit;
-      font-size: 11px;
-      line-height: 1.45;
-      resize: none;
-    }
-    button {
-      background: #3b82f6;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 10px;
-      font-family: inherit;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    main {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #05070b;
-      position: relative;
-    }
-    canvas {
-      width: 100%;
-      height: 100%;
-      image-rendering: pixelated;
-    }
-    .stats {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid #334155;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TexelForge, shader and texel workstation</title>
+<meta name="description" content="A WebGL 2 signed-distance raymarcher with ordered dithering, palette quantization, an orbit camera, a live uniform inspector and PNG export.">
+<style>
+/* Hallmark: operate surface, workbench structure, machined aluminum theme (light, neutral grotesk, anodized orange accent)
+   Hallmark pre-emit critique: P4 H4 E4 S4 R4 V4
+   Tokens locked: every UI color and font below comes from :root. Palette swatches are data and are set from JS. */
+
+@font-face { font-family: "Barlow"; src: url("fonts/barlow-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("fonts/barlow-600.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains-mono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains-mono-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+
+:root {
+  color-scheme: light;
+
+  --font-ui: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --color-bench: oklch(0.74 0.007 255);
+  --color-chassis: oklch(0.87 0.005 255);
+  --color-chassis-hi: oklch(0.95 0.004 255);
+  --color-chassis-lo: oklch(0.79 0.007 255);
+  --color-edge: oklch(0.56 0.012 255);
+  --color-edge-soft: oklch(0.56 0.012 255 / 0.45);
+  --color-highlight: oklch(1 0 0 / 0.78);
+  --color-shadow: oklch(0.25 0.02 255 / 0.32);
+  --color-shadow-deep: oklch(0.2 0.02 255 / 0.5);
+
+  --color-ink: oklch(0.24 0.012 255);
+  --color-ink-soft: oklch(0.40 0.012 255);
+
+  --color-accent: oklch(0.69 0.19 50);
+  --color-accent-lo: oklch(0.6 0.19 46);
+  --color-accent-ink: oklch(0.2 0.03 50);
+  --color-led-off: oklch(0.62 0.01 255);
+
+  --color-glass: oklch(0.14 0.01 255);
+  --color-glass-edge: oklch(0.3 0.01 255);
+  --color-glass-chip: oklch(0.14 0.01 255 / 0.82);
+  --color-glass-ink: oklch(0.93 0.005 255);
+  --color-glass-soft: oklch(0.76 0.01 255);
+
+  --color-focus: oklch(0.5 0.19 255);
+  --color-focus-glass: oklch(0.82 0.12 255);
+  --color-danger: oklch(0.45 0.19 27);
+
+  --radius-key: 0.3125rem;
+  --radius-display: 0.375rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.004 0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25 0 0 0 0 0.27 0 0 0 0 0.31 0 0 0 0.16 0'/></filter><rect width='256' height='256' filter='url(%23n)'/></svg>");
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; overflow-x: clip; }
+html { background: var(--color-bench); }
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--color-ink);
+  background: var(--color-bench);
+  -webkit-text-size-adjust: 100%;
+  scrollbar-color: var(--color-edge) transparent;
+  caret-color: var(--color-accent);
+}
+
+::selection { background: var(--color-accent); color: var(--color-accent-ink); }
+button, input, select, textarea { font: inherit; color: inherit; }
+code, output, .mono { font-family: var(--font-data); font-feature-settings: "tnum" 1, "zero" 1; }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* App frame ------------------------------------------------------------ */
+
+.app {
+  display: grid;
+  grid-template-columns: 17.5rem minmax(0, 1fr) 22.5rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "bar bar bar"
+    "tools stage inspect";
+  height: 100dvh;
+  min-width: 0;
+}
+
+.bar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  padding: 0.625rem 1rem;
+  background-image: var(--grain), linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis) 60%, var(--color-chassis-lo));
+  box-shadow: inset 0 1px 0 var(--color-highlight), 0 1px 0 var(--color-edge), 0 2px 8px -2px var(--color-shadow);
+  position: relative;
+  z-index: 2;
+}
+
+.brand { display: flex; align-items: center; gap: 0.625rem; margin-right: auto; min-width: 0; }
+.brand svg { flex: none; }
+.brand h1 { margin: 0; font-size: 1.25rem; line-height: 1.1; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.brand p { margin: 0; color: var(--color-ink-soft); font-size: 0.875rem; white-space: nowrap; }
+
+.readouts { display: flex; gap: 1.25rem; margin: 0; font-family: var(--font-data); font-size: 0.75rem; color: var(--color-ink-soft); white-space: nowrap; }
+.readouts b { font-weight: 500; color: var(--color-ink); }
+
+.actions { display: flex; gap: 0.5rem; }
+
+.rail {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 1rem 1.5rem;
+  background-image: var(--grain), linear-gradient(180deg, var(--color-chassis), var(--color-chassis-lo));
+  scrollbar-width: thin;
+}
+.rail-tools { grid-area: tools; box-shadow: inset -1px 0 0 var(--color-edge-soft), 1px 0 0 var(--color-highlight); }
+.rail-inspect { grid-area: inspect; display: flex; flex-direction: column; padding-bottom: 0; box-shadow: inset 1px 0 0 var(--color-edge-soft), -1px 0 0 var(--color-highlight); }
+
+.stage { grid-area: stage; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; min-height: 0; padding: 0.75rem 0.75rem 0.5rem; }
+
+/* Buttons ---------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.875rem;
+  border: 0;
+  border-radius: var(--radius-key);
+  background: linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis) 55%, var(--color-chassis-lo));
+  box-shadow: inset 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-edge), 0 1px 3px var(--color-shadow);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+.btn svg { flex: none; }
+.btn:hover { background: linear-gradient(180deg, var(--color-highlight), var(--color-chassis-hi) 55%, var(--color-chassis)); }
+.btn:active { transform: translateY(1px); background: var(--color-chassis-lo); box-shadow: inset 0 2px 4px var(--color-shadow), 0 0 0 1px var(--color-edge); }
+.btn:disabled { cursor: not-allowed; color: var(--color-ink-soft); background: var(--color-chassis-lo); box-shadow: 0 0 0 1px var(--color-edge-soft); }
+.btn-primary { color: var(--color-accent-ink); background: linear-gradient(180deg, var(--color-accent), var(--color-accent-lo)); box-shadow: inset 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-accent-lo), 0 1px 3px var(--color-shadow); }
+.btn-primary:hover { background: linear-gradient(180deg, var(--color-accent), var(--color-accent) 40%, var(--color-accent-lo)); }
+.btn-primary:active { background: var(--color-accent-lo); }
+.btn[data-state="busy"] { cursor: progress; }
+
+/* Control groups ---------------------------------------------------------- */
+
+.group { margin: 0; min-width: 0; padding: 1rem 0; border: 0; border-top: 1px solid var(--color-edge-soft); box-shadow: inset 0 1px 0 var(--color-highlight); }
+.rail-tools > .group:first-child { border-top: 0; box-shadow: none; }
+.group legend, .group h2 { float: left; width: 100%; margin: 0 0 0.625rem; padding: 0; font-size: 0.9375rem; font-weight: 600; line-height: 1.2; }
+.group legend + *, .group h2 + * { clear: both; }
+.hint { margin: 0.5rem 0 0; font-size: 0.8125rem; line-height: 1.35; color: var(--color-ink-soft); }
+
+.keys { display: grid; gap: 0.25rem; }
+.keys-2 { grid-template-columns: repeat(auto-fit, minmax(9.25rem, 1fr)); }
+
+.key {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.25rem;
+  padding: 0.3125rem 0.75rem;
+  border-radius: var(--radius-key);
+  background: linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis) 55%, var(--color-chassis-lo));
+  box-shadow: inset 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-edge-soft), 0 1px 2px var(--color-shadow);
+  font-weight: 600;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: box-shadow 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+.key:hover { background: linear-gradient(180deg, var(--color-highlight), var(--color-chassis-hi) 55%, var(--color-chassis)); }
+.key input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.key:has(input:checked) { background: linear-gradient(180deg, var(--color-chassis-lo), var(--color-chassis)); box-shadow: inset 0 2px 4px var(--color-shadow), 0 0 0 1px var(--color-edge); }
+.key:has(input:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.led { flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--color-led-off); box-shadow: inset 0 1px 1px var(--color-shadow); }
+.key:has(input:checked) .led { background: var(--color-accent); box-shadow: inset 0 -1px 1px var(--color-accent-lo), 0 1px 1px var(--color-highlight); }
+
+.key-top { display: flex; flex: 1; align-items: center; gap: 0.625rem; min-width: 0; }
+.strip { display: flex; flex: none; width: 5.5rem; height: 0.75rem; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px var(--color-shadow); }
+.strip span { flex: 1; }
+
+.switch { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.5rem; font-weight: 600; font-size: 0.875rem; cursor: pointer; }
+.switch + .switch { margin-top: 0.125rem; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.switch .slot { position: relative; flex: none; width: 2.75rem; height: 1.5rem; border-radius: 0.75rem; background: var(--color-chassis-lo); box-shadow: inset 0 2px 4px var(--color-shadow), 0 0 0 1px var(--color-edge-soft), 0 1px 0 var(--color-highlight); transition: background-color 160ms var(--ease-out); }
+.switch .slot::after { content: ""; position: absolute; top: 0.1875rem; left: 0.1875rem; width: 1.125rem; height: 1.125rem; border-radius: 50%; background: linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis-lo)); box-shadow: 0 0 0 1px var(--color-edge), 0 1px 2px var(--color-shadow); transition: transform 160ms var(--ease-out); }
+.switch:has(input:checked) .slot { background: var(--color-accent); }
+.switch:has(input:checked) .slot::after { transform: translateX(1.25rem); }
+.switch:has(input:focus-visible) .slot { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* Sliders ------------------------------------------------------------------ */
+
+.field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.125rem 0.75rem; }
+.field-spaced { margin-top: 0.75rem; }
+.field label { font-weight: 600; font-size: 0.875rem; }
+.field output { font-size: 0.8125rem; color: var(--color-ink); text-align: right; }
+.field input[type="range"] { grid-column: 1 / -1; }
+
+input[type="range"] { --fill: 50%; -webkit-appearance: none; appearance: none; width: 100%; height: 1.75rem; margin: 0; background: transparent; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 0.375rem; border-radius: 0.1875rem; background: linear-gradient(90deg, var(--color-accent) var(--fill), var(--color-chassis-lo) var(--fill)); box-shadow: inset 0 1px 2px var(--color-shadow), 0 1px 0 var(--color-highlight); }
+input[type="range"]::-moz-range-track { height: 0.375rem; border-radius: 0.1875rem; background: linear-gradient(90deg, var(--color-accent) var(--fill), var(--color-chassis-lo) var(--fill)); box-shadow: inset 0 1px 2px var(--color-shadow), 0 1px 0 var(--color-highlight); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 1.125rem; height: 1.5rem; margin-top: -0.5625rem; border: 0; border-radius: 0.25rem; background: linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis-lo)); box-shadow: inset 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-edge), 0 2px 4px var(--color-shadow); }
+input[type="range"]::-moz-range-thumb { width: 1.125rem; height: 1.5rem; border: 0; border-radius: 0.25rem; background: linear-gradient(180deg, var(--color-chassis-hi), var(--color-chassis-lo)); box-shadow: inset 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-edge), 0 2px 4px var(--color-shadow); }
+input[type="range"]:active::-webkit-slider-thumb { background: var(--color-chassis-lo); box-shadow: inset 0 2px 3px var(--color-shadow), 0 0 0 1px var(--color-edge); }
+input[type="range"]:active::-moz-range-thumb { background: var(--color-chassis-lo); box-shadow: inset 0 2px 3px var(--color-shadow), 0 0 0 1px var(--color-edge); }
+input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 0.25rem; }
+
+/* Viewport ------------------------------------------------------------------ */
+
+.bezel {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.5rem;
+  border-radius: calc(var(--radius-display) + 0.25rem);
+  background: linear-gradient(180deg, var(--color-chassis-lo), var(--color-chassis));
+  box-shadow: inset 0 2px 5px var(--color-shadow), 0 1px 0 var(--color-highlight), 0 0 0 1px var(--color-edge-soft);
+}
+.display {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-display);
+  background: var(--color-glass);
+  box-shadow: 0 0 0 1px var(--color-glass-edge);
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.display.is-dragging { cursor: grabbing; }
+.display:focus-visible { outline: 2px solid var(--color-focus-glass); outline-offset: 2px; }
+.display canvas { position: absolute; top: 0; left: 0; display: block; image-rendering: pixelated; }
+
+.chips { position: absolute; top: 0.625rem; left: 0.625rem; right: 0.625rem; display: flex; flex-wrap: wrap; gap: 0.375rem; pointer-events: none; }
+.chip { padding: 0.25rem 0.5rem; border-radius: 0.25rem; background: var(--color-glass-chip); box-shadow: 0 0 0 1px var(--color-glass-edge); font-family: var(--font-data); font-size: 0.75rem; line-height: 1.3; color: var(--color-glass-ink); white-space: nowrap; }
+.drag-hint { position: absolute; left: 0.625rem; bottom: 0.625rem; margin: 0; max-width: calc(100% - 1.25rem); padding: 0.25rem 0.5rem; border-radius: 0.25rem; background: var(--color-glass-chip); box-shadow: 0 0 0 1px var(--color-glass-edge); font-size: 0.8125rem; color: var(--color-glass-soft); pointer-events: none; transition: opacity 400ms var(--ease-out); }
+.display.has-moved .drag-hint { opacity: 0; }
+
+.notice { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.5rem; padding: 1.5rem; text-align: center; background: var(--color-glass); color: var(--color-glass-ink); }
+.notice[hidden] { display: none; }
+.notice h2 { margin: 0; font-size: 1.125rem; }
+.notice p { margin: 0; max-width: 46ch; color: var(--color-glass-soft); }
+.notice pre { margin: 0.5rem 0 0; max-width: 100%; max-height: 40vh; overflow: auto; padding: 0.75rem; text-align: left; font-family: var(--font-data); font-size: 0.75rem; white-space: pre-wrap; color: var(--color-glass-ink); background: var(--color-glass-chip); border-radius: 0.25rem; }
+
+.status { min-height: 1.25rem; margin: 0; padding: 0 0.25rem; font-family: var(--font-data); font-size: 0.75rem; color: var(--color-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Inspector ------------------------------------------------------------------ */
+
+.tabs { display: flex; gap: 0.25rem; padding: 0.75rem 0; }
+.tab { flex: 1; min-height: 2.5rem; padding: 0.375rem 0.75rem; border: 0; border-radius: var(--radius-key); background: transparent; font-weight: 600; font-size: 0.875rem; white-space: nowrap; color: var(--color-ink-soft); cursor: pointer; transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out); }
+.tab:hover { color: var(--color-ink); }
+.tab[aria-selected="true"] { color: var(--color-ink); background: linear-gradient(180deg, var(--color-chassis-lo), var(--color-chassis)); box-shadow: inset 0 2px 4px var(--color-shadow), 0 0 0 1px var(--color-edge); }
+
+.panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 1.5rem; scrollbar-width: thin; }
+.panel[hidden] { display: none; }
+.link-state { margin: 0 0 0.25rem; font-size: 0.8125rem; line-height: 1.35; color: var(--color-ink-soft); }
+.link-state[data-ok="false"] { color: var(--color-danger); font-weight: 600; }
+
+.u-group { margin: 0; padding: 0.75rem 0 0.25rem; }
+.u-group h3 { margin: 0 0 0.25rem; font-size: 0.9375rem; font-weight: 600; }
+.u-list { margin: 0; padding: 0; list-style: none; }
+.u-row { padding: 0.625rem 0; border-top: 1px solid var(--color-edge-soft); box-shadow: inset 0 1px 0 var(--color-highlight); }
+.u-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.u-name { font-family: var(--font-data); font-size: 0.8125rem; font-weight: 500; color: var(--color-ink); overflow-wrap: anywhere; }
+.u-type { flex: none; font-family: var(--font-data); font-size: 0.6875rem; color: var(--color-ink-soft); }
+.u-note { margin: 0.125rem 0 0.375rem; font-size: 0.8125rem; line-height: 1.3; color: var(--color-ink-soft); }
+.u-val { margin: 0; font-family: var(--font-data); font-size: 0.8125rem; color: var(--color-ink); overflow-wrap: anywhere; }
+.u-val .tag { margin-left: 0.5rem; font-family: var(--font-ui); font-weight: 600; color: var(--color-ink-soft); }
+.u-edit { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; align-items: center; gap: 0.5rem; }
+.u-num { width: 100%; min-height: 2rem; padding: 0.25rem 0.375rem; border: 0; border-radius: 0.25rem; background: var(--color-chassis-hi); box-shadow: inset 0 1px 3px var(--color-shadow), 0 0 0 1px var(--color-edge-soft); font-family: var(--font-data); font-size: 0.8125rem; text-align: right; }
+.u-num:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.u-chips { display: flex; height: 1rem; margin-bottom: 0.375rem; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px var(--color-shadow); }
+.u-chips span { flex: 1; }
+.u-mat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.125rem 0.5rem; }
+.u-mat span { text-align: right; }
+
+.source { margin: 0; padding: 0.75rem; overflow: auto; max-height: 100%; border-radius: var(--radius-key); background: var(--color-glass); box-shadow: inset 0 2px 5px var(--color-shadow-deep), 0 0 0 1px var(--color-glass-edge); font-family: var(--font-data); font-size: 0.6875rem; line-height: 1.5; color: var(--color-glass-ink); tab-size: 2; white-space: pre; scrollbar-color: var(--color-glass-edge) transparent; }
+.source:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* Responsive ------------------------------------------------------------------ */
+
+@media (max-width: 1179px) {
+  html, body { overflow-y: auto; }
+  .app { height: auto; min-height: 100dvh; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto; grid-template-areas: "bar bar" "stage stage" "tools inspect"; }
+  .stage { padding: 0.75rem; }
+  .bezel { flex: none; aspect-ratio: 16 / 10; max-height: 75dvh; }
+  .rail { overflow: visible; }
+  .rail-inspect { padding-bottom: 1.5rem; }
+  .panel { overflow: visible; }
+  .source { max-height: 28rem; }
+}
+@media (max-width: 719px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bar" "stage" "tools" "inspect"; }
+  .bezel { aspect-ratio: 4 / 3; }
+  .rail-tools { box-shadow: inset 0 1px 0 var(--color-highlight); }
+  .rail-inspect { box-shadow: inset 0 1px 0 var(--color-edge-soft); }
+  .bar { padding-inline: 0.75rem; }
+  .brand p { display: none; }
+  .actions { width: 100%; }
+  .actions .btn { flex: 1; }
+  .readouts { display: none; }
+}
+@media (max-width: 519px) {
+  .bezel { aspect-ratio: 1 / 1; padding: 0.375rem; }
+}
+@media (pointer: coarse) {
+  .key, .switch, .tab, .btn { min-height: 2.75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+</style>
 </head>
 <body>
-  <aside>
-    <div>
-      <h1>TexelForge v1.0</h1>
-      <div class="sub">Real-time WebGL ordered Bayer 4x4 texel quantizer &amp; signed-distance raymarcher</div>
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="TexelForge mark">
+        <rect x="1" y="1" width="26" height="26" rx="4" fill="oklch(0.24 0.012 255)"/>
+        <rect x="5" y="5" width="8" height="8" fill="oklch(0.69 0.19 50)"/>
+        <rect x="15" y="5" width="8" height="8" fill="oklch(0.87 0.005 255)"/>
+        <rect x="5" y="15" width="8" height="8" fill="oklch(0.62 0.01 255)"/>
+        <rect x="15" y="15" width="8" height="8" fill="oklch(0.69 0.19 50)"/>
+      </svg>
+      <h1>TexelForge</h1>
+      <p>Shader and texel workstation</p>
     </div>
-    <div>
-      <label><span>Texel Pixel Scale</span><span id="vScale">4 px</span></label>
-      <input id="scale" type="range" min="1" max="12" value="4" />
+    <p class="readouts" aria-hidden="true">
+      <span>FPS <b id="fps">0</b></span>
+      <span><b id="res">0 x 0</b> texels</span>
+    </p>
+    <div class="actions">
+      <button class="btn" id="resetBtn" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1"/><path d="M2.5 2.5v3h3"/></svg>
+        Reset camera
+      </button>
+      <button class="btn btn-primary" id="exportBtn" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8"/><path d="M4.5 6.8 8 10.3l3.5-3.5"/><path d="M2.5 13.5h11"/></svg>
+        Save PNG
+      </button>
     </div>
-    <div>
-      <label><span>Bayer Dither Spread</span><span id="vDither">0.42</span></label>
-      <input id="dither" type="range" min="0" max="100" value="42" />
+  </header>
+
+  <aside class="rail rail-tools" aria-label="Scene controls">
+    <fieldset class="group">
+      <legend>Geometry</legend>
+      <div class="keys" id="geoKeys"></div>
+    </fieldset>
+    <fieldset class="group">
+      <legend>Dither matrix</legend>
+      <div class="keys keys-2" id="ditherKeys"></div>
+      <div class="field field-spaced">
+        <label for="texel">Texel size</label>
+        <output id="texelOut" for="texel">4 px</output>
+        <input id="texel" type="range" min="1" max="16" step="1" value="4">
+      </div>
+      <p class="hint">The render target is the display divided by this size, so it does not appear as a uniform.</p>
+    </fieldset>
+    <fieldset class="group">
+      <legend>Palette</legend>
+      <div class="keys" id="palKeys"></div>
+      <p class="hint">Picking a palette also sets levels to the depth that palette was built for.</p>
+    </fieldset>
+    <div class="group">
+      <h2>Motion</h2>
+      <label class="switch"><span>Animate shapes</span><input id="animate" type="checkbox" checked><span class="slot" aria-hidden="true"></span></label>
+      <label class="switch"><span>Auto orbit camera</span><input id="orbit" type="checkbox"><span class="slot" aria-hidden="true"></span></label>
     </div>
-    <div>
-      <label><span>Palette Quantization Levels</span><span id="vLevels">6</span></label>
-      <input id="levels" type="range" min="2" max="16" value="6" />
-    </div>
-    <div>
-      <label><span>SDF Geometry Preset</span></label>
-      <select id="preset">
-        <option value="0">Torus Knot + Octahedron Lattice</option>
-        <option value="1">Menger Sponge Voxel Tunnel</option>
-        <option value="2">Gyroid Ferrofluid Iso-Surface</option>
-      </select>
-    </div>
-    <textarea id="shaderSrc" spellcheck="false">// Ordered 4x4 Bayer Matrix Texel Pass
-float bayer4(vec2 p) {
-  ivec2 i = ivec2(mod(p, 4.0));
-  int idx = i.y * 4 + i.x;
-  float m[16] = float[16](
-     0.0,  8.0,  2.0, 10.0,
-    12.0,  4.0, 14.0,  6.0,
-     3.0, 11.0,  1.0,  9.0,
-    15.0,  7.0, 13.0,  5.0
-  );
-  return (m[idx] / 16.0) - 0.5;
-}</textarea>
-    <button id="exportBtn">Export Quantized PNG Snapshot</button>
   </aside>
-  <main>
-    <canvas id="gl"></canvas>
-    <div class="stats" id="fpsBox">60 FPS // 4x4 BAYER TEXEL GRID</div>
+
+  <main class="stage">
+    <div class="bezel">
+      <div class="display" id="display" tabindex="0" role="group" aria-label="3D viewport. Drag to orbit, scroll to zoom. Arrow keys orbit, plus and minus zoom, zero resets.">
+        <canvas id="gl" aria-hidden="true"></canvas>
+        <div class="chips">
+          <span class="chip" id="chipGeo">Torus knot</span>
+          <span class="chip" id="chipMode">Bayer 4x4 / Phosphor P1</span>
+        </div>
+        <p class="drag-hint">Drag to orbit. Scroll or pinch to zoom.</p>
+        <div class="notice" id="notice" role="alert" hidden>
+          <h2 id="noticeTitle"></h2>
+          <p id="noticeBody"></p>
+          <pre id="noticeLog" hidden></pre>
+        </div>
+      </div>
+    </div>
+    <p class="status" id="live" role="status" aria-live="polite">Ready.</p>
   </main>
 
-  <script>
-    const canvas = document.getElementById("gl");
-    const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
+  <aside class="rail rail-inspect" aria-label="Uniform inspector">
+    <div class="tabs" role="tablist" aria-label="Inspector views">
+      <button class="tab" role="tab" id="tabUniforms" aria-controls="panelUniforms" aria-selected="true" type="button">Uniforms</button>
+      <button class="tab" role="tab" id="tabSource" aria-controls="panelSource" aria-selected="false" tabindex="-1" type="button">Fragment source</button>
+    </div>
+    <div class="panel" id="panelUniforms" role="tabpanel" aria-labelledby="tabUniforms">
+      <p class="link-state" id="linkState">Waiting for the GPU.</p>
+      <div id="uniformHost"></div>
+    </div>
+    <div class="panel" id="panelSource" role="tabpanel" aria-labelledby="tabSource" hidden>
+      <pre class="source" id="sourceView" tabindex="0" aria-label="Fragment shader source, read only"></pre>
+    </div>
+  </aside>
+</div>
 
-    const vs = `
-      attribute vec2 p;
-      void main() { gl_Position = vec4(p, 0.0, 1.0); }
-    `;
-    const fs = `
-      precision highp float;
-      uniform vec2 u_res;
-      uniform float u_time;
-      uniform float u_scale;
-      uniform float u_dither;
-      uniform float u_levels;
-      uniform float u_preset;
+<noscript>TexelForge needs JavaScript and WebGL 2.</noscript>
 
-      float bayer(vec2 c) {
-        vec2 p = floor(mod(c, 4.0));
-        float idx = p.y * 4.0 + p.x;
-        if (idx < 0.5) return 0.0/16.0 - 0.5;
-        if (idx < 1.5) return 8.0/16.0 - 0.5;
-        if (idx < 2.5) return 2.0/16.0 - 0.5;
-        if (idx < 3.5) return 10.0/16.0 - 0.5;
-        if (idx < 4.5) return 12.0/16.0 - 0.5;
-        if (idx < 5.5) return 4.0/16.0 - 0.5;
-        if (idx < 6.5) return 14.0/16.0 - 0.5;
-        if (idx < 7.5) return 6.0/16.0 - 0.5;
-        if (idx < 8.5) return 3.0/16.0 - 0.5;
-        if (idx < 9.5) return 11.0/16.0 - 0.5;
-        if (idx < 10.5) return 1.0/16.0 - 0.5;
-        if (idx < 11.5) return 9.0/16.0 - 0.5;
-        if (idx < 12.5) return 15.0/16.0 - 0.5;
-        if (idx < 13.5) return 7.0/16.0 - 0.5;
-        if (idx < 14.5) return 13.0/16.0 - 0.5;
-        return 5.0/16.0 - 0.5;
-      }
+<script>
+(() => {
+  "use strict";
 
-      mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+  /* ---------------------------------------------------------------- data */
 
-      float map(vec3 p) {
-        p.xz *= rot(u_time * 0.45);
-        p.xy *= rot(u_time * 0.31);
-        if (u_preset < 0.5) {
-          vec2 q = vec2(length(p.xz) - 1.15, p.y);
-          return length(q) - 0.38 + 0.08 * sin(8.0 * atan(p.z, p.x) + u_time * 2.0);
-        } else if (u_preset < 1.5) {
-          vec3 q = abs(p) - vec3(1.0);
-          return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.15;
-        } else {
-          return (abs(dot(sin(p*2.6), cos(p.zxy*2.6))) - 0.35) * 0.35;
-        }
-      }
+  const GEOMETRIES = [
+    { id: "torus-knot", name: "Torus knot" },
+    { id: "menger-sponge", name: "Menger voxel sponge" },
+    { id: "gyroid-ferrofluid", name: "Gyroid ferrofluid" },
+    { id: "octahedral-lattice", name: "Octahedral crystal lattice" },
+    { id: "mobius-gears", name: "Twisted Mobius gears" }
+  ];
 
-      vec3 calcNormal(vec3 p) {
-        vec2 e = vec2(0.002, 0.0);
-        return normalize(vec3(
-          map(p + e.xyy) - map(p - e.xyy),
-          map(p + e.yxy) - map(p - e.yxy),
-          map(p + e.yyx) - map(p - e.yyx)
-        ));
-      }
+  const DITHERS = [
+    { id: "bayer-2x2", name: "Bayer 2x2" },
+    { id: "bayer-4x4", name: "Bayer 4x4" },
+    { id: "bayer-8x8", name: "Bayer 8x8" },
+    { id: "scanline-halftone", name: "Scanline halftone" }
+  ];
 
-      void main() {
-        vec2 texCoord = floor(gl_FragCoord.xy / u_scale) * u_scale;
-        vec2 uv = (texCoord - 0.5 * u_res) / u_res.y;
-        vec3 ro = vec3(0.0, 0.0, -3.2);
-        vec3 rd = normalize(vec3(uv, 1.35));
+  const PALETTES = [
+    { id: "phosphor-p1", name: "Phosphor P1", stops: ["#020a04", "#0a3d1a", "#1a7a34", "#4be070", "#c9ffd6"], bg: 0, levels: 5 },
+    { id: "amber-p3", name: "Amber P3", stops: ["#0a0400", "#3d1c00", "#8a4a00", "#ffa11a", "#ffe2a3"], bg: 0, levels: 5 },
+    { id: "blueprint-cyan", name: "Blueprint Cyan", stops: ["#06204a", "#0b4a8f", "#1f86c8", "#6fd3f0", "#eaffff"], bg: 0, levels: 5 },
+    { id: "gameboy-dmg", name: "GameBoy DMG", stops: ["#0f380f", "#306230", "#8bac0f", "#9bbc0f"], bg: 0, levels: 4 },
+    { id: "monochrome-ink", name: "Monochrome Ink", stops: ["#15140f", "#8a867a", "#f4f1e7"], bg: 1, levels: 2 }
+  ];
 
-        float t = 0.0;
-        vec3 col = vec3(0.04, 0.06, 0.11);
-        for (int i = 0; i < 64; i++) {
-          vec3 p = ro + rd * t;
-          float d = map(p);
-          if (d < 0.002) {
-            vec3 n = calcNormal(p);
-            vec3 l1 = normalize(vec3(0.8, 0.9, -0.7));
-            vec3 l2 = normalize(vec3(-0.7, -0.5, -0.5));
-            float diff1 = max(dot(n, l1), 0.0);
-            float diff2 = max(dot(n, l2), 0.0);
-            float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.5);
-            col = vec3(0.10, 0.45, 0.85) * diff1 + vec3(0.95, 0.45, 0.18) * diff2 + vec3(0.25, 0.88, 0.75) * rim;
-            break;
-          }
-          if (t > 8.0) break;
-          t += d;
-        }
+  const MAX_STOPS = 5;
+  const DEFAULTS = { geometry: 0, dither: 1, palette: 0, texel: 4, spread: 1, levels: 5, exposure: 1, light: 0.9, brush: 0.8, scan: 6, time: 0, animate: true, orbit: false, yaw: 0.62, pitch: 0.36, dist: 5.4 };
 
-        float b = bayer(floor(gl_FragCoord.xy / u_scale));
-        col += b * u_dither;
-        col = floor(clamp(col, 0.0, 1.0) * u_levels) / u_levels;
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `;
+  /* ------------------------------------------------------------- shader */
 
-    function compile(type, src) {
-      const s = gl.createShader(type);
-      gl.shaderSource(s, src);
-      gl.compileShader(s);
-      return s;
+  const VERT = `#version 300 es
+in vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+  const FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform mat3 u_view;
+uniform vec3 u_camPos;
+uniform int u_geometry;
+uniform float u_lightAngle;
+uniform float u_exposure;
+uniform float u_brush;
+uniform int u_dither;
+uniform float u_levels;
+uniform float u_spread;
+uniform float u_scanPeriod;
+uniform vec3 u_palette[5];
+uniform int u_paletteSize;
+uniform float u_bgLuma;
+
+out vec4 outColor;
+
+const float BOUND = 2.6;
+
+mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+float smax(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return max(a, b) + h * h * k * 0.25;
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 d = abs(p) - b;
+  return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
+}
+
+float sdOcta(vec3 p, float s) {
+  p = abs(p);
+  return (p.x + p.y + p.z - s) * 0.57735027;
+}
+
+/* 0: (2,3) torus knot. Two strands wind around a ring while the cross
+   section turns one and a half times per lap, so the pair closes into one
+   trefoil. The sweep is not an exact distance, so steps are shortened. */
+float mapKnot(vec3 p) {
+  float a = atan(p.z, p.x);
+  vec2 q = vec2(length(p.xz) - 1.1, p.y);
+  q *= rot(a * 1.5 + u_time * 0.5);
+  q.x = abs(q.x) - 0.4;
+  return (length(q) - 0.19) * 0.6;
+}
+
+/* 1: Menger sponge, three subdivisions, slowly turning. */
+float mapMenger(vec3 p) {
+  p.xz *= rot(u_time * 0.2);
+  p.yz *= rot(0.35);
+  float d = sdBox(p, vec3(1.0));
+  float s = 1.0;
+  for (int i = 0; i < 3; i++) {
+    vec3 a = mod(p * s, 2.0) - 1.0;
+    s *= 3.0;
+    vec3 r = abs(1.0 - 3.0 * abs(a));
+    float da = max(r.x, r.y);
+    float db = max(r.y, r.z);
+    float dc = max(r.z, r.x);
+    d = max(d, (min(da, min(db, dc)) - 1.0) / s);
+  }
+  return d;
+}
+
+/* 2: gyroid walls clipped by a spiky blob, drifting along z. */
+float mapGyroid(vec3 p) {
+  p.xz *= rot(u_time * 0.12);
+  vec3 q = p * 2.6 + vec3(0.0, 0.0, u_time * 0.45);
+  float g = dot(sin(q), cos(q.yzx));
+  float shell = (abs(g) - 0.45) * 0.22;
+  float spikes = sin(p.x * 9.0 + u_time) * sin(p.y * 9.0) * sin(p.z * 9.0);
+  float blob = (length(p) - 1.45 - 0.1 * max(spikes, 0.0)) * 0.7;
+  return smax(shell, blob, 0.12);
+}
+
+/* 3: a 3 x 3 x 3 lattice of octahedra joined by thin struts. */
+float mapLattice(vec3 p) {
+  p.xz *= rot(u_time * 0.18);
+  p.yz *= rot(0.35);
+  float s = 0.95;
+  vec3 id = clamp(floor(p / s + 0.5), -1.0, 1.0);
+  vec3 q = p - s * id;
+  float crystal = sdOcta(q, 0.4);
+  float strut = min(min(length(q.yz), length(q.xz)), length(q.xy)) - 0.05;
+  strut = max(strut, sdBox(q, vec3(s * 0.5)));
+  return min(crystal, strut) * 0.9;
+}
+
+/* 4: a Mobius band (half twist) with gear teeth cut into both edges. */
+float mapMobius(vec3 p) {
+  float a = atan(p.z, p.x) - u_time * 0.35;
+  vec2 q = vec2(length(p.xz) - 1.2, p.y);
+  q *= rot(a * 0.5);
+  float tooth = smoothstep(-0.3, 0.3, sin(a * 26.0));
+  vec2 b = vec2(0.42 + 0.11 * tooth, 0.055);
+  vec2 d = abs(q) - b;
+  float box = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.02;
+  return box * 0.65;
+}
+
+float map(vec3 p) {
+  if (u_geometry == 0) return mapKnot(p);
+  if (u_geometry == 1) return mapMenger(p);
+  if (u_geometry == 2) return mapGyroid(p);
+  if (u_geometry == 3) return mapLattice(p);
+  return mapMobius(p);
+}
+
+vec3 calcNormal(vec3 p) {
+  const vec2 k = vec2(1.0, -1.0);
+  const float h = 0.0012;
+  return normalize(
+    k.xyy * map(p + k.xyy * h) +
+    k.yyx * map(p + k.yyx * h) +
+    k.yxy * map(p + k.yxy * h) +
+    k.xxx * map(p + k.xxx * h));
+}
+
+/* Threshold in [-0.5, 0.5). Bayer matrices come from bit interleaving, so
+   one function covers 2x2, 4x4 and 8x8. */
+float bayer(ivec2 p, int bits) {
+  int n = 1 << bits;
+  int x = p.x & (n - 1);
+  int y = p.y & (n - 1);
+  int a = x ^ y;
+  int v = 0;
+  for (int i = 0; i < 3; i++) {
+    if (i >= bits) break;
+    int sh = 2 * (bits - 1 - i);
+    v |= ((y >> i) & 1) << sh;
+    v |= ((a >> i) & 1) << (sh + 1);
+  }
+  return (float(v) + 0.5) / float(n * n) - 0.5;
+}
+
+float scanline(ivec2 p) {
+  float ph = fract((float(p.y) + 0.5) / u_scanPeriod);
+  return abs(ph * 2.0 - 1.0) - 0.5;
+}
+
+float threshold(ivec2 p) {
+  if (u_dither == 0) return bayer(p, 1);
+  if (u_dither == 1) return bayer(p, 2);
+  if (u_dither == 2) return bayer(p, 3);
+  return scanline(p);
+}
+
+vec3 ramp(float v) {
+  float f = clamp(v, 0.0, 1.0) * float(u_paletteSize - 1);
+  int i = clamp(int(floor(f)), 0, u_paletteSize - 2);
+  return mix(u_palette[i], u_palette[i + 1], f - float(i));
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+  vec3 rd = normalize(u_view * vec3(uv, 1.25));
+  vec3 ro = u_camPos;
+  bool paper = u_bgLuma > 0.5;
+
+  float vig = 1.0 - smoothstep(0.0, 0.95, length(uv));
+  float luma = u_bgLuma + (paper ? -0.16 : 0.16) * vig;
+
+  float b = dot(ro, rd);
+  float disc = b * b - (dot(ro, ro) - BOUND * BOUND);
+  if (disc > 0.0) {
+    float sq = sqrt(disc);
+    float t = max(-b - sq, 0.0);
+    float tmax = -b + sq;
+    bool hit = false;
+    for (int i = 0; i < 110; i++) {
+      float d = map(ro + rd * t);
+      if (d < 0.0008 + 0.0008 * t) { hit = true; break; }
+      t += d;
+      if (t > tmax) break;
     }
-    const prog = gl.createProgram();
-    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    if (hit) {
+      vec3 p = ro + rd * t;
+      vec3 n = calcNormal(p);
+      vec3 L = normalize(vec3(cos(u_lightAngle) * 0.9, 0.8, sin(u_lightAngle) * 0.9));
+      float key = max(dot(n, L), 0.0);
+      float fill = max(dot(n, normalize(vec3(-L.x, -0.3, -L.z))), 0.0);
+      float ndv = max(dot(n, -rd), 0.0);
+      float rim = pow(1.0 - ndv, 3.0);
+
+      float occ = 0.0;
+      float sca = 1.0;
+      for (int i = 1; i <= 4; i++) {
+        float h = 0.04 * float(i);
+        occ += (h - map(p + n * h)) * sca;
+        sca *= 0.7;
+      }
+      float ao = clamp(1.0 - 2.2 * occ, 0.25, 1.0);
+
+      /* Brushed metal highlight, a Kajiya Kay lobe along a surface tangent. */
+      vec3 axis = abs(n.y) > 0.92 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+      vec3 T = normalize(cross(n, axis));
+      vec3 H = normalize(L - rd);
+      float th = dot(T, H);
+      float aniso = pow(sqrt(max(1.0 - th * th, 0.0)), 36.0) * smoothstep(0.0, 0.25, dot(n, L)) * max(dot(n, H), 0.0);
+
+      float shade = 0.09 + 0.62 * key * ao + 0.2 * fill * ao + 0.16 * rim * ao + u_brush * 0.55 * aniso;
+      shade *= u_exposure;
+      if (paper) {
+        shade *= 0.85;
+        shade *= 1.0 - 0.95 * smoothstep(0.35, 0.8, pow(1.0 - ndv, 3.0));
+      }
+      luma = shade;
+    }
+  }
+
+  float steps = max(u_levels - 1.0, 1.0);
+  float v = clamp(luma, 0.0, 1.0) + threshold(ivec2(gl_FragCoord.xy)) * u_spread / steps;
+  float q = floor(clamp(v, 0.0, 1.0) * steps + 0.5) / steps;
+  outColor = vec4(ramp(q), 1.0);
+}
+`;
+
+  /* ------------------------------------------------------------ helpers */
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const el = (tag, props, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = v;
+      else node.setAttribute(k, v);
+    }
+    for (const kid of kids) node.append(kid);
+    return node;
+  };
+  const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  const S = { ...DEFAULTS };
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) S.animate = false;
+
+  const live = $("#live");
+  const say = (msg) => { live.textContent = msg; };
+
+  /* ----------------------------------------------------- shareable state */
+
+  const HASH_KEYS = [
+    ["g", "geometry", 0, 4, true], ["d", "dither", 0, 3, true], ["p", "palette", 0, PALETTES.length - 1, true],
+    ["x", "texel", 1, 16, true], ["s", "spread", 0, 1.5, false], ["l", "levels", 2, 16, true],
+    ["e", "exposure", 0.4, 1.8, false], ["a", "light", 0, 6.283, false], ["b", "brush", 0, 1.5, false],
+    ["sp", "scan", 3, 12, false], ["yaw", "yaw", -1000, 1000, false], ["pit", "pitch", -1.45, 1.45, false],
+    ["z", "dist", 2.6, 9, false]
+  ];
+
+  function readHash() {
+    const h = new URLSearchParams(location.hash.slice(1));
+    for (const [k, key, lo, hi, int] of HASH_KEYS) {
+      if (!h.has(k)) continue;
+      const v = parseFloat(h.get(k));
+      if (Number.isFinite(v)) S[key] = clamp(int ? Math.round(v) : v, lo, hi);
+    }
+    if (!h.has("l")) S.levels = PALETTES[S.palette].levels;
+    if (h.has("t")) {
+      const t = parseFloat(h.get("t"));
+      if (Number.isFinite(t)) { S.time = Math.max(0, t); S.animate = false; }
+    }
+    if (h.get("o") === "1") S.orbit = true;
+  }
+
+  let hashTimer = 0;
+  function writeHashSoon() {
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      const h = new URLSearchParams();
+      for (const [k, key, , , int] of HASH_KEYS) h.set(k, int ? String(S[key]) : S[key].toFixed(3));
+      if (!S.animate) h.set("t", S.time.toFixed(2));
+      if (S.orbit) h.set("o", "1");
+      history.replaceState(null, "", "#" + h.toString());
+    }, 300);
+  }
+
+  /* ---------------------------------------------------------------- GL */
+
+  const display = $("#display");
+  const canvas = $("#gl");
+  let gl = null;
+  let prog = null;
+  let U = {};
+  let rows = [];
+  const viewMat = new Float32Array(9);
+  const camPos = new Float32Array(3);
+  const paletteFlat = new Float32Array(MAX_STOPS * 3);
+  let rtW = 1, rtH = 1;
+  let dirty = true;
+
+  function showNotice(title, body, log) {
+    $("#noticeTitle").textContent = title;
+    $("#noticeBody").textContent = body;
+    const pre = $("#noticeLog");
+    pre.hidden = !log;
+    pre.textContent = log || "";
+    $("#notice").hidden = false;
+  }
+
+  function linkFailed(text) {
+    $("#linkState").textContent = text;
+    $("#linkState").dataset.ok = "false";
+  }
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh) || "No log from the driver.";
+      gl.deleteShader(sh);
+      throw Object.assign(new Error("compile"), { log, stage: type === gl.VERTEX_SHADER ? "vertex" : "fragment" });
+    }
+    return sh;
+  }
+
+  function initGL() {
+    if (!gl) gl = canvas.getContext("webgl2", { antialias: false, alpha: false, powerPreference: "high-performance" });
+    if (!gl) {
+      showNotice("WebGL 2 is not available", "TexelForge draws with a WebGL 2 fragment shader. Try a current version of Chrome, Edge, Firefox or Safari, and make sure hardware acceleration is on.");
+      linkFailed("No GPU context, so there is nothing to inspect.");
+      return false;
+    }
+    let vs, fs;
+    try {
+      vs = compile(gl.VERTEX_SHADER, VERT);
+      fs = compile(gl.FRAGMENT_SHADER, FRAG);
+    } catch (err) {
+      showNotice("The shader did not compile", "The " + err.stage + " stage reported the problem below.", err.log);
+      linkFailed("Compile failed in the " + err.stage + " stage.");
+      return false;
+    }
+    prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.bindAttribLocation(prog, 0, "a_pos");
     gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      showNotice("The shader did not link", "The driver rejected the program.", gl.getProgramInfoLog(prog));
+      linkFailed("Link failed.");
+      return false;
+    }
     gl.useProgram(prog);
 
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
-    const locP = gl.getAttribLocation(prog, "p");
-    gl.enableVertexAttribArray(locP);
-    gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-    const uRes = gl.getUniformLocation(prog, "u_res");
-    const uTime = gl.getUniformLocation(prog, "u_time");
-    const uScale = gl.getUniformLocation(prog, "u_scale");
-    const uDither = gl.getUniformLocation(prog, "u_dither");
-    const uLevels = gl.getUniformLocation(prog, "u_levels");
-    const uPreset = gl.getUniformLocation(prog, "u_preset");
-
-    const scaleEl = document.getElementById("scale");
-    const ditherEl = document.getElementById("dither");
-    const levelsEl = document.getElementById("levels");
-    const presetEl = document.getElementById("preset");
-
-    scaleEl.oninput = () => document.getElementById("vScale").textContent = scaleEl.value + " px";
-    ditherEl.oninput = () => document.getElementById("vDither").textContent = (ditherEl.value / 100).toFixed(2);
-    levelsEl.oninput = () => document.getElementById("vLevels").textContent = levelsEl.value;
-
-    document.getElementById("exportBtn").onclick = () => {
-      const a = document.createElement("a");
-      a.download = "texelforge_snapshot.png";
-      a.href = canvas.toDataURL("image/png");
-      a.click();
-    };
-
-    function render(t) {
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w; canvas.height = h;
-        gl.viewport(0, 0, w, h);
-      }
-      gl.uniform2f(uRes, w, h);
-      gl.uniform1f(uTime, t * 0.001);
-      gl.uniform1f(uScale, parseFloat(scaleEl.value));
-      gl.uniform1f(uDither, parseFloat(ditherEl.value) / 100.0);
-      gl.uniform1f(uLevels, parseFloat(levelsEl.value));
-      gl.uniform1f(uPreset, parseFloat(presetEl.value));
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      requestAnimationFrame(render);
+    U = {};
+    const count = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < count; i++) {
+      const info = gl.getActiveUniform(prog, i);
+      const base = info.name.replace(/\[0\]$/, "");
+      U[base] = { loc: gl.getUniformLocation(prog, info.name), type: info.type, size: info.size };
     }
-    requestAnimationFrame(render);
-  </script>
+    $("#sourceView").textContent = gl.getShaderSource(fs).replace(/^\s+/, "");
+    $("#linkState").textContent = "Linked with " + count + " active uniforms. Values are read back from the GPU about ten times a second.";
+    $("#linkState").dataset.ok = "true";
+    return true;
+  }
+
+  /* ---------------------------------------------------- camera and draw */
+
+  function updateCamera() {
+    const cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
+    const px = S.dist * cp * Math.sin(S.yaw), py = S.dist * sp, pz = S.dist * cp * Math.cos(S.yaw);
+    camPos[0] = px; camPos[1] = py; camPos[2] = pz;
+    const f = [-px / S.dist, -py / S.dist, -pz / S.dist];
+    const rl = Math.hypot(f[2], f[0]) || 1;
+    const r = [-f[2] / rl, 0, f[0] / rl];
+    const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+    viewMat.set([r[0], r[1], r[2], u[0], u[1], u[2], f[0], f[1], f[2]]);
+  }
+
+  function updatePalette() {
+    const pal = PALETTES[S.palette];
+    for (let i = 0; i < MAX_STOPS; i++) {
+      paletteFlat.set(hexToRgb(pal.stops[Math.min(i, pal.stops.length - 1)]), i * 3);
+    }
+  }
+
+  function loc(name) { return U[name] ? U[name].loc : null; }
+
+  function upload() {
+    gl.uniform2f(loc("u_resolution"), rtW, rtH);
+    gl.uniform1f(loc("u_time"), S.time);
+    gl.uniformMatrix3fv(loc("u_view"), false, viewMat);
+    gl.uniform3fv(loc("u_camPos"), camPos);
+    gl.uniform1i(loc("u_geometry"), S.geometry);
+    gl.uniform1f(loc("u_lightAngle"), S.light);
+    gl.uniform1f(loc("u_exposure"), S.exposure);
+    gl.uniform1f(loc("u_brush"), S.brush);
+    gl.uniform1i(loc("u_dither"), S.dither);
+    gl.uniform1f(loc("u_levels"), S.levels);
+    gl.uniform1f(loc("u_spread"), S.spread);
+    gl.uniform1f(loc("u_scanPeriod"), S.scan);
+    gl.uniform3fv(loc("u_palette"), paletteFlat);
+    gl.uniform1i(loc("u_paletteSize"), PALETTES[S.palette].stops.length);
+    gl.uniform1f(loc("u_bgLuma"), PALETTES[S.palette].bg);
+  }
+
+  function draw() {
+    updateCamera();
+    upload();
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function resize() {
+    const rect = display.getBoundingClientRect();
+    const px = S.texel;
+    rtW = Math.max(1, Math.ceil(rect.width / px));
+    rtH = Math.max(1, Math.ceil(rect.height / px));
+    canvas.width = rtW;
+    canvas.height = rtH;
+    canvas.style.width = rtW * px + "px";
+    canvas.style.height = rtH * px + "px";
+    if (gl) gl.viewport(0, 0, rtW, rtH);
+    $("#res").textContent = rtW + " x " + rtH;
+    dirty = true;
+  }
+
+  /* ----------------------------------------------------------- controls */
+
+  function setFill(input) {
+    const lo = +input.min, hi = +input.max;
+    input.style.setProperty("--fill", ((+input.value - lo) / (hi - lo)) * 100 + "%");
+  }
+
+  function buildKeys(host, name, items, strip) {
+    items.forEach((item, i) => {
+      const input = el("input", { type: "radio", name, value: String(i) });
+      const led = el("span", { class: "led", "aria-hidden": "true" });
+      const text = el("span", { text: item.name });
+      let label;
+      if (strip) {
+        label = el("label", { class: "key key-pal" }, input, el("span", { class: "key-top" }, led, text), strip(item));
+      } else {
+        label = el("label", { class: "key" }, input, led, text);
+      }
+      host.append(label);
+    });
+  }
+
+  function syncKeys(name, value) {
+    document.querySelectorAll('input[name="' + name + '"]').forEach((r) => { r.checked = +r.value === value; });
+  }
+
+  function refreshChips() {
+    $("#chipGeo").textContent = GEOMETRIES[S.geometry].name;
+    $("#chipMode").textContent = DITHERS[S.dither].name + " / " + PALETTES[S.palette].name;
+  }
+
+  function setTexel(v) {
+    S.texel = v;
+    const input = $("#texel");
+    input.value = v;
+    setFill(input);
+    $("#texelOut").textContent = v + " px";
+    resize();
+  }
+
+  function markChanged() { dirty = true; writeHashSoon(); }
+
+  function initControls() {
+    buildKeys($("#geoKeys"), "geometry", GEOMETRIES);
+    buildKeys($("#ditherKeys"), "dither", DITHERS);
+    buildKeys($("#palKeys"), "palette", PALETTES, (pal) => {
+      const strip = el("span", { class: "strip", "aria-hidden": "true" });
+      pal.stops.forEach((hex) => { const s = el("span"); s.style.background = hex; strip.append(s); });
+      return strip;
+    });
+
+    $("#geoKeys").addEventListener("change", (e) => {
+      S.geometry = +e.target.value; refreshChips(); markChanged();
+      say("Geometry set to " + GEOMETRIES[S.geometry].name + ".");
+    });
+    $("#ditherKeys").addEventListener("change", (e) => {
+      S.dither = +e.target.value; refreshChips(); markChanged();
+      say("Dither matrix set to " + DITHERS[S.dither].name + ".");
+    });
+    $("#palKeys").addEventListener("change", (e) => {
+      S.palette = +e.target.value;
+      S.levels = PALETTES[S.palette].levels;
+      updatePalette(); refreshChips(); markChanged();
+      say(PALETTES[S.palette].name + " selected. Levels set to " + S.levels + ".");
+    });
+    $("#texel").addEventListener("input", (e) => { setTexel(+e.target.value); markChanged(); });
+    $("#animate").addEventListener("change", (e) => { S.animate = e.target.checked; markChanged(); say(S.animate ? "Shape animation on." : "Shape animation paused."); });
+    $("#orbit").addEventListener("change", (e) => { S.orbit = e.target.checked; markChanged(); say(S.orbit ? "Auto orbit on." : "Auto orbit off."); });
+    $("#resetBtn").addEventListener("click", resetCamera);
+    $("#exportBtn").addEventListener("click", exportPng);
+
+    syncKeys("geometry", S.geometry);
+    syncKeys("dither", S.dither);
+    syncKeys("palette", S.palette);
+    $("#animate").checked = S.animate;
+    $("#orbit").checked = S.orbit;
+    setTexel(S.texel);
+    refreshChips();
+  }
+
+  /* ------------------------------------------------------ orbit camera */
+
+  const drag = { pointers: new Map(), pinch: 0, vx: 0, vy: 0, lastT: 0 };
+
+  function noteMoved() { display.classList.add("has-moved"); }
+
+  function resetCamera() {
+    S.yaw = DEFAULTS.yaw; S.pitch = DEFAULTS.pitch; S.dist = DEFAULTS.dist;
+    drag.vx = drag.vy = 0;
+    markChanged();
+    say("Camera reset.");
+  }
+
+  function initOrbit() {
+    display.addEventListener("pointerdown", (e) => {
+      display.setPointerCapture(e.pointerId);
+      drag.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      drag.vx = drag.vy = 0;
+      drag.lastT = performance.now();
+      if (drag.pointers.size === 2) {
+        const [a, b] = [...drag.pointers.values()];
+        drag.pinch = Math.hypot(a.x - b.x, a.y - b.y);
+      }
+      display.classList.add("is-dragging");
+    });
+    display.addEventListener("pointermove", (e) => {
+      const p = drag.pointers.get(e.pointerId);
+      if (!p) return;
+      const dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX; p.y = e.clientY;
+      if (drag.pointers.size === 2) {
+        const [a, b] = [...drag.pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (drag.pinch > 0 && d > 0) S.dist = clamp(S.dist * (drag.pinch / d), 2.6, 9);
+        drag.pinch = d;
+      } else {
+        S.yaw -= dx * 0.007;
+        S.pitch = clamp(S.pitch + dy * 0.007, -1.45, 1.45);
+        const now = performance.now();
+        const dt = Math.max(1, now - drag.lastT) / 1000;
+        drag.vx = drag.vx * 0.6 + ((-dx * 0.007) / dt) * 0.4;
+        drag.vy = drag.vy * 0.6 + ((dy * 0.007) / dt) * 0.4;
+        drag.lastT = now;
+      }
+      noteMoved();
+      markChanged();
+    });
+    const release = (e) => {
+      drag.pointers.delete(e.pointerId);
+      if (drag.pointers.size < 2) drag.pinch = 0;
+      if (drag.pointers.size === 0) display.classList.remove("is-dragging");
+      if (performance.now() - drag.lastT > 80) drag.vx = drag.vy = 0;
+    };
+    display.addEventListener("pointerup", release);
+    display.addEventListener("pointercancel", release);
+    display.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      S.dist = clamp(S.dist * Math.exp(e.deltaY * 0.0012), 2.6, 9);
+      noteMoved();
+      markChanged();
+    }, { passive: false });
+    display.addEventListener("dblclick", resetCamera);
+    display.addEventListener("keydown", (e) => {
+      const step = 0.08;
+      const k = e.key;
+      if (k === "ArrowLeft") S.yaw += step;
+      else if (k === "ArrowRight") S.yaw -= step;
+      else if (k === "ArrowUp") S.pitch = clamp(S.pitch + step, -1.45, 1.45);
+      else if (k === "ArrowDown") S.pitch = clamp(S.pitch - step, -1.45, 1.45);
+      else if (k === "+" || k === "=") S.dist = clamp(S.dist * 0.92, 2.6, 9);
+      else if (k === "-" || k === "_") S.dist = clamp(S.dist * 1.08, 2.6, 9);
+      else if (k === "0") { e.preventDefault(); resetCamera(); return; }
+      else return;
+      e.preventDefault();
+      noteMoved();
+      markChanged();
+    });
+  }
+
+  /* ---------------------------------------------------------- inspector */
+
+  const GLC = WebGL2RenderingContext;
+  const TYPE_NAMES = {
+    [GLC.FLOAT]: "float", [GLC.FLOAT_VEC2]: "vec2", [GLC.FLOAT_VEC3]: "vec3", [GLC.FLOAT_VEC4]: "vec4",
+    [GLC.INT]: "int", [GLC.FLOAT_MAT3]: "mat3", [GLC.FLOAT_MAT4]: "mat4"
+  };
+
+  const f2 = (n) => n.toFixed(2);
+  const f3 = (n) => n.toFixed(3);
+
+  const META = {
+    u_dither: { group: "Dither", note: "Threshold matrix applied before quantizing. Set with the dither keys.", tag: (v) => (DITHERS[v] ? DITHERS[v].name : "") },
+    u_levels: { group: "Dither", note: "Colors in the ramp after quantizing.", edit: { key: "levels", min: 2, max: 16, step: 1, digits: 0 } },
+    u_spread: { group: "Dither", note: "Dither strength. 1.00 is one full quantizer step.", edit: { key: "spread", min: 0, max: 1.5, step: 0.01, digits: 2 } },
+    u_scanPeriod: { group: "Dither", note: "Rows per halftone line, used by Scanline halftone.", edit: { key: "scan", min: 3, max: 12, step: 0.5, digits: 1 } },
+    u_palette: { group: "Palette", note: "Five ramp stops from dark to light." },
+    u_paletteSize: { group: "Palette", note: "Stops in use. Unused slots repeat the last color." },
+    u_bgLuma: { group: "Palette", note: "Backdrop brightness before dithering." },
+    u_geometry: { group: "Scene", note: "Active signed distance function. Set with the geometry keys.", tag: (v) => (GEOMETRIES[v] ? GEOMETRIES[v].name : "") },
+    u_time: { group: "Scene", note: "Seconds of shape animation." },
+    u_lightAngle: { group: "Scene", note: "Key light heading around the vertical axis, in radians.", edit: { key: "light", min: 0, max: 6.283, step: 0.01, digits: 2 } },
+    u_exposure: { group: "Scene", note: "Scales surface brightness.", edit: { key: "exposure", min: 0.4, max: 1.8, step: 0.01, digits: 2 } },
+    u_brush: { group: "Scene", note: "Strength of the brushed aluminum highlight.", edit: { key: "brush", min: 0, max: 1.5, step: 0.01, digits: 2 } },
+    u_camPos: { group: "Camera", note: "Eye position in world units." },
+    u_view: { group: "Camera", note: "Camera basis in columns, right then up then forward." },
+    u_resolution: { group: "Camera", note: "Render target in texels." }
+  };
+  const GROUP_ORDER = ["Dither", "Palette", "Scene", "Camera", "Other"];
+  const META_ORDER = Object.keys(META);
+  const rank = (name) => { const i = META_ORDER.indexOf(name); return i < 0 ? 99 : i; };
+
+  function readUniform(name) {
+    const u = U[name];
+    if (u.size > 1) {
+      const out = [];
+      for (let i = 0; i < u.size; i++) out.push(gl.getUniform(prog, gl.getUniformLocation(prog, name + "[" + i + "]")));
+      return out;
+    }
+    return gl.getUniform(prog, u.loc);
+  }
+
+  function makeEditable(name, meta) {
+    const id = "u-" + name;
+    const ed = meta.edit;
+    const label = el("label", { class: "u-name", for: id, text: name });
+    const range = el("input", { type: "range", id, min: ed.min, max: ed.max, step: ed.step });
+    const num = el("input", { type: "number", class: "u-num", min: ed.min, max: ed.max, step: ed.step, "aria-label": name + " value" });
+    const commit = (raw) => {
+      const v = parseFloat(raw);
+      if (!Number.isFinite(v)) return;
+      S[ed.key] = clamp(v, ed.min, ed.max);
+      markChanged();
+    };
+    range.addEventListener("input", () => commit(range.value));
+    num.addEventListener("input", () => commit(num.value));
+    return {
+      nameNode: label,
+      body: el("div", { class: "u-edit" }, range, num),
+      update: (v) => {
+        const val = typeof v === "number" ? v : 0;
+        if (document.activeElement !== range) range.value = val;
+        if (document.activeElement !== num) num.value = val.toFixed(ed.digits);
+        setFill(range);
+      }
+    };
+  }
+
+  function makePalette(u) {
+    const chips = el("div", { class: "u-chips", "aria-hidden": "true" });
+    const nodes = [];
+    for (let i = 0; i < u.size; i++) { const s = el("span"); chips.append(s); nodes.push(s); }
+    const line = el("p", { class: "u-val" });
+    const body = el("div", {}, chips, line);
+    return {
+      body,
+      update: (v) => {
+        const hex = v.map((c) => "#" + Array.from(c).map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join(""));
+        hex.forEach((h, i) => { nodes[i].style.background = h; });
+        line.textContent = hex.join(" ");
+      }
+    };
+  }
+
+  function makeMat3() {
+    const grid = el("div", { class: "u-val u-mat" });
+    const cells = [];
+    for (let i = 0; i < 9; i++) { const c = el("span"); grid.append(c); cells.push(c); }
+    return {
+      body: grid,
+      update: (v) => {
+        /* Print row by row so each column vector reads downward. */
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells[r * 3 + c].textContent = f2(v[c * 3 + r]);
+      }
+    };
+  }
+
+  function makeReadout(u, meta) {
+    const val = el("p", { class: "u-val" });
+    return {
+      body: val,
+      update: (v) => {
+        let text;
+        if (typeof v === "number") text = u.type === GLC.INT ? String(v) : f3(v);
+        else text = Array.from(v).map(f2).join(", ");
+        val.textContent = text;
+        if (meta.tag) {
+          const tag = meta.tag(v);
+          if (tag) val.append(el("span", { class: "tag", text: tag }));
+        }
+      }
+    };
+  }
+
+  function buildInspector() {
+    const groups = new Map(GROUP_ORDER.map((g) => [g, []]));
+    Object.keys(U).forEach((name) => groups.get((META[name] || { group: "Other" }).group).push(name));
+
+    const host = $("#uniformHost");
+    host.textContent = "";
+    rows = [];
+
+    for (const [group, list] of groups) {
+      if (!list.length) continue;
+      list.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+      const ul = el("ul", { class: "u-list" });
+      for (const name of list) {
+        const u = U[name];
+        const meta = META[name] || { note: "" };
+        const part = meta.edit ? makeEditable(name, meta)
+          : name === "u_palette" ? makePalette(u)
+          : u.type === GLC.FLOAT_MAT3 ? makeMat3()
+          : makeReadout(u, meta);
+        const typeName = (TYPE_NAMES[u.type] || "type " + u.type) + (u.size > 1 ? "[" + u.size + "]" : "");
+        const nameNode = part.nameNode || el("code", { class: "u-name", text: name });
+        const li = el("li", { class: "u-row" }, el("div", { class: "u-head" }, nameNode, el("span", { class: "u-type", text: typeName })));
+        if (meta.note) li.append(el("p", { class: "u-note", text: meta.note }));
+        li.append(part.body);
+        ul.append(li);
+        rows.push({ name, update: part.update, last: "" });
+      }
+      host.append(el("section", { class: "u-group" }, el("h3", { text: group }), ul));
+    }
+  }
+
+  let lastInspect = 0;
+  function refreshInspector(now) {
+    if (!gl || now - lastInspect < 90) return;
+    lastInspect = now;
+    for (const row of rows) {
+      let v;
+      try { v = readUniform(row.name); } catch (err) { continue; }
+      const key = Array.isArray(v) ? v.map((x) => Array.from(x).join(",")).join("|")
+        : typeof v === "number" ? String(v) : Array.from(v).join(",");
+      if (key === row.last) continue;
+      row.last = key;
+      row.update(v);
+    }
+  }
+
+  /* --------------------------------------------------------------- tabs */
+
+  function initTabs() {
+    const tabs = [$("#tabUniforms"), $("#tabSource")];
+    const panels = [$("#panelUniforms"), $("#panelSource")];
+    const select = (i, focus) => {
+      tabs.forEach((t, j) => { t.setAttribute("aria-selected", String(i === j)); t.tabIndex = i === j ? 0 : -1; panels[j].hidden = i !== j; });
+      if (focus) tabs[i].focus();
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener("click", () => select(i, false));
+      t.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); select(1 - i, true); }
+        else if (e.key === "Home") { e.preventDefault(); select(0, true); }
+        else if (e.key === "End") { e.preventDefault(); select(1, true); }
+      });
+    });
+  }
+
+  /* -------------------------------------------------------------- export */
+
+  function exportPng() {
+    if (!gl) { say("Nothing to save because the GPU context is missing."); return; }
+    const btn = $("#exportBtn");
+    btn.dataset.state = "busy";
+    try {
+      draw();
+      const dpr = window.devicePixelRatio || 1;
+      let scale = Math.max(1, Math.round(S.texel * dpr));
+      scale = Math.max(1, Math.min(scale, Math.floor(4096 / Math.max(rtW, rtH))));
+      const out = document.createElement("canvas");
+      out.width = rtW * scale;
+      out.height = rtH * scale;
+      const ctx = out.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      const name = "texelforge-" + slug(GEOMETRIES[S.geometry].name) + "-" + slug(DITHERS[S.dither].name) + "-" + slug(PALETTES[S.palette].name) + ".png";
+      out.toBlob((blob) => {
+        delete btn.dataset.state;
+        if (!blob) { say("The browser could not encode the PNG."); return; }
+        const url = URL.createObjectURL(blob);
+        const a = el("a", { href: url, download: name });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        say("Saved " + name + " at " + out.width + " x " + out.height + ".");
+      }, "image/png");
+    } catch (err) {
+      delete btn.dataset.state;
+      say("Save failed. " + err.message);
+    }
+  }
+
+  /* ----------------------------------------------------------- main loop */
+
+  let lastT = performance.now();
+  let drawn = 0;
+  let fpsT = lastT;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - lastT) / 1000);
+    lastT = now;
+    let active = false;
+    if (S.animate) { S.time += dt; active = true; }
+    if (drag.pointers.size === 0) {
+      if (S.orbit) { S.yaw -= dt * 0.35; active = true; }
+      if (Math.abs(drag.vx) > 0.01 || Math.abs(drag.vy) > 0.01) {
+        S.yaw += drag.vx * dt;
+        S.pitch = clamp(S.pitch + drag.vy * dt, -1.45, 1.45);
+        const decay = Math.pow(0.03, dt);
+        drag.vx *= decay; drag.vy *= decay;
+        active = true;
+      } else { drag.vx = drag.vy = 0; }
+    }
+    if (gl && prog && (dirty || active)) {
+      draw();
+      dirty = false;
+      drawn++;
+    }
+    if (now - fpsT >= 500) {
+      $("#fps").textContent = drawn === 0 ? "idle" : String(Math.round((drawn * 1000) / (now - fpsT)));
+      drawn = 0;
+      fpsT = now;
+    }
+    refreshInspector(now);
+  }
+
+  /* ---------------------------------------------------------------- boot */
+
+  function boot() {
+    readHash();
+    updatePalette();
+    initTabs();
+    initControls();
+    initOrbit();
+    if (initGL()) buildInspector();
+    canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      prog = null;
+      showNotice("The GPU context was lost", "The browser reclaimed the graphics context. It usually comes back on its own in a moment.");
+    });
+    canvas.addEventListener("webglcontextrestored", () => {
+      $("#notice").hidden = true;
+      if (initGL()) { buildInspector(); resize(); }
+    });
+    new ResizeObserver(resize).observe(display);
+    resize();
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener("error", (e) => { say("Script error. " + e.message); });
+
+  try { boot(); } catch (err) {
+    showNotice("TexelForge hit an error", "Reload the page. If it keeps happening, the details are below.", String((err && err.stack) || err));
+  }
+})();
+</script>
 </body>
 </html>
