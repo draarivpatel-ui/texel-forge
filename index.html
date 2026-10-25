@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TexelForge, shader and texel workstation</title>
 <meta name="description" content="A WebGL 2 signed-distance raymarcher with ordered dithering, palette quantization, an orbit camera, a live uniform inspector and PNG export.">
+<meta property="og:title" content="TexelForge, shader and texel workstation">
+<meta property="og:description" content="A WebGL 2 signed-distance raymarcher with ordered dithering, palette quantization, an orbit camera, a live uniform inspector and PNG export.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://aariv.me/texel-forge/">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23181715'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%23c84b24'/%3E%3C/svg%3E">
 <style>
 /* Hallmark: operate surface, workbench structure, machined aluminum theme (light, neutral grotesk, anodized orange accent)
    Hallmark pre-emit critique: P4 H4 E4 S4 R4 V4
@@ -78,6 +84,9 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 code, output, .mono { font-family: var(--font-data); font-feature-settings: "tnum" 1, "zero" 1; }
 :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+  .skip-link { position: absolute; left: 16px; top: -60px; background: var(--color-glass); color: var(--color-glass-ink); padding: 8px 14px; border-radius: var(--radius-key); font-weight: 600; text-decoration: none; z-index: 30; }
+  .skip-link:focus, .skip-link:focus-visible { top: 10px; }
+  code, output, .mono, .readouts, .u-val, .u-num, .chip { font-variant-numeric: tabular-nums; }
 
 /* App frame ------------------------------------------------------------ */
 
@@ -292,6 +301,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
 
 .source { margin: 0; padding: 0.75rem; overflow: auto; max-height: 100%; border-radius: var(--radius-key); background: var(--color-glass); box-shadow: inset 0 2px 5px var(--color-shadow-deep), 0 0 0 1px var(--color-glass-edge); font-family: var(--font-data); font-size: 0.6875rem; line-height: 1.5; color: var(--color-glass-ink); tab-size: 2; white-space: pre; scrollbar-color: var(--color-glass-edge) transparent; }
 .source:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+  .skip-link { position: absolute; left: 16px; top: -60px; background: var(--color-glass); color: var(--color-glass-ink); padding: 8px 14px; border-radius: var(--radius-key); font-weight: 600; text-decoration: none; z-index: 30; }
+  .skip-link:focus, .skip-link:focus-visible { top: 10px; }
+  code, output, .mono, .readouts, .u-val, .u-num, .chip { font-variant-numeric: tabular-nums; }
 
 /* Responsive ------------------------------------------------------------------ */
 
@@ -328,6 +340,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app">
   <header class="bar">
     <div class="brand">
@@ -384,7 +397,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
     </div>
   </aside>
 
-  <main class="stage">
+  <main class="stage" id="main-content">
     <div class="bezel">
       <div class="display" id="display" tabindex="0" role="group" aria-label="3D viewport. Drag to orbit, scroll to zoom. Arrow keys orbit, plus and minus zoom, zero resets.">
         <canvas id="gl" aria-hidden="true"></canvas>
