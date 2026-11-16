@@ -337,6 +337,25 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
+
+/* Material maps -------------------------------------------------------------- */
+
+.tab kbd { margin-left: 0.25rem; padding: 0 0.3rem; border: 1px solid var(--color-edge); border-radius: 0.25rem; font-family: var(--font-data); font-size: 0.6875rem; font-weight: 500; color: var(--color-ink-soft); }
+.maps-group { margin: 0 0 0.75rem; padding: 0; border: 0; }
+.maps-group legend { padding: 0; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.875rem; }
+.maps-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; margin: 0.875rem 0; }
+.map-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.map-cell, .map-lit { margin: 0; }
+.map-cell canvas, .map-lit canvas { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; image-rendering: pixelated; border-radius: 0.25rem; box-shadow: inset 0 1px 3px var(--color-shadow), 0 0 0 1px var(--color-edge); background: var(--color-chassis-lo); }
+.map-cell figcaption, .map-lit figcaption { margin-top: 0.25rem; font-family: var(--font-data); font-size: 0.75rem; color: var(--color-ink-soft); }
+.map-lit { margin-top: 0.75rem; }
+.map-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 0.75rem; margin: 0.875rem 0 0; }
+.map-stats div { min-width: 0; }
+.map-stats dt { font-size: 0.75rem; color: var(--color-ink-soft); }
+.map-stats dd { margin: 0; font-family: var(--font-data); font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--color-ink); overflow-wrap: anywhere; }
+.map-note { margin: 0.875rem 0 0; font-size: 0.8125rem; line-height: 1.4; color: var(--color-ink-soft); }
+.data-badge { display: inline-flex; align-items: center; gap: 0.375rem; margin-right: 0.5rem; padding: 0.0625rem 0.5rem; border-radius: 999px; box-shadow: 0 0 0 1px var(--color-edge); font-family: var(--font-data); font-size: 0.6875rem; color: var(--color-ink); white-space: nowrap; }
+.data-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
 </style>
 </head>
 <body>
@@ -352,7 +371,6 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
         <rect x="15" y="15" width="8" height="8" fill="oklch(0.69 0.19 50)"/>
       </svg>
       <h1>TexelForge</h1>
-      <p>Shader and texel workstation</p>
     </div>
     <p class="readouts" aria-hidden="true">
       <span>FPS <b id="fps">0</b></span>
@@ -383,12 +401,10 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
         <output id="texelOut" for="texel">4 px</output>
         <input id="texel" type="range" min="1" max="16" step="1" value="4">
       </div>
-      <p class="hint">The render target is the display divided by this size, so it does not appear as a uniform.</p>
     </fieldset>
     <fieldset class="group">
       <legend>Palette</legend>
       <div class="keys" id="palKeys"></div>
-      <p class="hint">Picking a palette also sets levels to the depth that palette was built for.</p>
     </fieldset>
     <div class="group">
       <h2>Motion</h2>
@@ -419,7 +435,8 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
   <aside class="rail rail-inspect" aria-label="Uniform inspector">
     <div class="tabs" role="tablist" aria-label="Inspector views">
       <button class="tab" role="tab" id="tabUniforms" aria-controls="panelUniforms" aria-selected="true" type="button">Uniforms</button>
-      <button class="tab" role="tab" id="tabSource" aria-controls="panelSource" aria-selected="false" tabindex="-1" type="button">Fragment source</button>
+      <button class="tab" role="tab" id="tabSource" aria-controls="panelSource" aria-selected="false" tabindex="-1" type="button">Source</button>
+      <button class="tab" role="tab" id="tabMaps" aria-controls="panelMaps" aria-selected="false" tabindex="-1" type="button">Maps <kbd>M</kbd></button>
     </div>
     <div class="panel" id="panelUniforms" role="tabpanel" aria-labelledby="tabUniforms">
       <p class="link-state" id="linkState">Waiting for the GPU.</p>
@@ -428,11 +445,49 @@ input[type="range"]:focus-visible { outline: 2px solid var(--color-focus); outli
     <div class="panel" id="panelSource" role="tabpanel" aria-labelledby="tabSource" hidden>
       <pre class="source" id="sourceView" tabindex="0" aria-label="Fragment shader source, read only"></pre>
     </div>
+    <div class="panel maps-panel" id="panelMaps" role="tabpanel" aria-labelledby="tabMaps" hidden>
+      <fieldset class="group maps-group">
+        <legend>Surface pattern</legend>
+        <div class="keys keys-2" id="mapKeys"></div>
+      </fieldset>
+      <div class="field">
+        <label for="mapStrength">Bump strength</label>
+        <output id="mapStrengthOut" for="mapStrength">4</output>
+        <input id="mapStrength" type="range" min="1" max="12" step="1" value="4">
+      </div>
+      <div class="field field-spaced">
+        <label for="mapRadius">Occlusion radius</label>
+        <output id="mapRadiusOut" for="mapRadius">6 texels</output>
+        <input id="mapRadius" type="range" min="2" max="12" step="1" value="6">
+      </div>
+      <div class="maps-actions">
+        <button class="btn" id="mapSeedBtn" type="button">New seed</button>
+        <button class="btn btn-primary" id="mapExportBtn" type="button">Save map atlas</button>
+      </div>
+      <div class="map-grid">
+        <figure class="map-cell"><canvas id="mapHeight" width="64" height="64" role="img" aria-label="Height map, white is high"></canvas><figcaption>Height</figcaption></figure>
+        <figure class="map-cell"><canvas id="mapNormal" width="64" height="64" role="img" aria-label="Tangent space normal map in the OpenGL convention"></canvas><figcaption>Normal</figcaption></figure>
+        <figure class="map-cell"><canvas id="mapAo" width="64" height="64" role="img" aria-label="Ambient occlusion map, dark is occluded"></canvas><figcaption>Occlusion</figcaption></figure>
+        <figure class="map-cell"><canvas id="mapRough" width="64" height="64" role="img" aria-label="Roughness map derived from curvature and occlusion"></canvas><figcaption>Roughness</figcaption></figure>
+      </div>
+      <figure class="map-lit">
+        <canvas id="mapLit" width="64" height="64" role="img" aria-label="The material lit by the scene light and dithered through the active palette, tiled two by two"></canvas>
+        <figcaption>Lit preview, tiled 2 by 2, active dither and palette</figcaption>
+      </figure>
+      <dl class="map-stats" id="mapStats">
+        <div><dt>Normal unit error</dt><dd id="statUnit">n/a</dd></div>
+        <div><dt>Seam jump / interior jump</dt><dd id="statSeam">n/a</dd></div>
+        <div><dt>Mean occlusion</dt><dd id="statAo">n/a</dd></div>
+        <div><dt>Synthesis time</dt><dd id="statTime">n/a</dd></div>
+      </dl>
+      <p class="map-note"><span class="data-badge">Computed in this tab</span>Procedural maps at 64 by 64 texels. Patterns use periodic coordinates and wrap-around sampling so the maps repeat on a grid. Roughness is a heuristic from curvature and occlusion, not a measured material.</p>
+    </div>
   </aside>
 </div>
 
 <noscript>TexelForge needs JavaScript and WebGL 2.</noscript>
 
+<script src="js/texel-maps.js"></script>
 <script>
 (() => {
   "use strict";
@@ -727,6 +782,10 @@ void main() {
     ["sp", "scan", 3, 12, false], ["yaw", "yaw", -1000, 1000, false], ["pit", "pitch", -1.45, 1.45, false],
     ["z", "dist", 2.6, 9, false]
   ];
+  const MAP_HASH_KEYS = [
+    ["mp", "pattern", 0, 3], ["ms", "seed", 0, 2147483646],
+    ["mb", "strength", 1, 12], ["mr", "radius", 2, 12]
+  ];
 
   function readHash() {
     const h = new URLSearchParams(location.hash.slice(1));
@@ -734,6 +793,12 @@ void main() {
       if (!h.has(k)) continue;
       const v = parseFloat(h.get(k));
       if (Number.isFinite(v)) S[key] = clamp(int ? Math.round(v) : v, lo, hi);
+    }
+    for (const [k, key, lo, hi] of MAP_HASH_KEYS) {
+      const raw = h.get(k);
+      if (raw === null || raw.trim() === "") continue;
+      const v = Number(raw);
+      if (Number.isFinite(v)) M[key] = clamp(Math.round(v), lo, hi);
     }
     if (!h.has("l")) S.levels = PALETTES[S.palette].levels;
     if (h.has("t")) {
@@ -749,6 +814,7 @@ void main() {
     hashTimer = setTimeout(() => {
       const h = new URLSearchParams();
       for (const [k, key, , , int] of HASH_KEYS) h.set(k, int ? String(S[key]) : S[key].toFixed(3));
+      for (const [k, key] of MAP_HASH_KEYS) h.set(k, String(M[key]));
       if (!S.animate) h.set("t", S.time.toFixed(2));
       if (S.orbit) h.set("o", "1");
       history.replaceState(null, "", "#" + h.toString());
@@ -936,6 +1002,7 @@ void main() {
   }
 
   function setTexel(v) {
+    v = clamp(Math.round(v), 1, 16);
     S.texel = v;
     const input = $("#texel");
     input.value = v;
@@ -944,7 +1011,7 @@ void main() {
     resize();
   }
 
-  function markChanged() { dirty = true; writeHashSoon(); }
+  function markChanged() { dirty = true; writeHashSoon(); if (M.maps) M.stale = true; }
 
   function initControls() {
     buildKeys($("#geoKeys"), "geometry", GEOMETRIES);
@@ -956,15 +1023,15 @@ void main() {
     });
 
     $("#geoKeys").addEventListener("change", (e) => {
-      S.geometry = +e.target.value; refreshChips(); markChanged();
+      S.geometry = clamp(Math.round(+e.target.value), 0, GEOMETRIES.length - 1); refreshChips(); markChanged();
       say("Geometry set to " + GEOMETRIES[S.geometry].name + ".");
     });
     $("#ditherKeys").addEventListener("change", (e) => {
-      S.dither = +e.target.value; refreshChips(); markChanged();
+      S.dither = clamp(Math.round(+e.target.value), 0, DITHERS.length - 1); refreshChips(); markChanged();
       say("Dither matrix set to " + DITHERS[S.dither].name + ".");
     });
     $("#palKeys").addEventListener("change", (e) => {
-      S.palette = +e.target.value;
+      S.palette = clamp(Math.round(+e.target.value), 0, PALETTES.length - 1);
       S.levels = PALETTES[S.palette].levels;
       updatePalette(); refreshChips(); markChanged();
       say(PALETTES[S.palette].name + " selected. Levels set to " + S.levels + ".");
@@ -1108,17 +1175,21 @@ void main() {
   function makeEditable(name, meta) {
     const id = "u-" + name;
     const ed = meta.edit;
+    const integer = HASH_KEYS.some(([, key, , , int]) => key === ed.key && int);
     const label = el("label", { class: "u-name", for: id, text: name });
     const range = el("input", { type: "range", id, min: ed.min, max: ed.max, step: ed.step });
     const num = el("input", { type: "number", class: "u-num", min: ed.min, max: ed.max, step: ed.step, "aria-label": name + " value" });
     const commit = (raw) => {
       const v = parseFloat(raw);
       if (!Number.isFinite(v)) return;
-      S[ed.key] = clamp(v, ed.min, ed.max);
+      S[ed.key] = clamp(integer ? Math.round(v) : v, ed.min, ed.max);
+      if (integer) range.value = String(S[ed.key]);
       markChanged();
     };
     range.addEventListener("input", () => commit(range.value));
     num.addEventListener("input", () => commit(num.value));
+    // Keep the draft while typing, then normalize the box when editing ends.
+    num.addEventListener("change", () => { if (integer) num.value = String(S[ed.key]); });
     return {
       nameNode: label,
       body: el("div", { class: "u-edit" }, range, num),
@@ -1225,20 +1296,142 @@ void main() {
 
   /* --------------------------------------------------------------- tabs */
 
+  let selectTab = () => {};
+
   function initTabs() {
-    const tabs = [$("#tabUniforms"), $("#tabSource")];
-    const panels = [$("#panelUniforms"), $("#panelSource")];
+    const tabs = [$("#tabUniforms"), $("#tabSource"), $("#tabMaps")];
+    const panels = [$("#panelUniforms"), $("#panelSource"), $("#panelMaps")];
+    const n = tabs.length;
     const select = (i, focus) => {
       tabs.forEach((t, j) => { t.setAttribute("aria-selected", String(i === j)); t.tabIndex = i === j ? 0 : -1; panels[j].hidden = i !== j; });
       if (focus) tabs[i].focus();
+      if (i === 2) renderMaps();
     };
+    selectTab = select;
     tabs.forEach((t, i) => {
       t.addEventListener("click", () => select(i, false));
       t.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); select(1 - i, true); }
+        if (e.key === "ArrowRight") { e.preventDefault(); select((i + 1) % n, true); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); select((i + n - 1) % n, true); }
         else if (e.key === "Home") { e.preventDefault(); select(0, true); }
-        else if (e.key === "End") { e.preventDefault(); select(1, true); }
+        else if (e.key === "End") { e.preventDefault(); select(n - 1, true); }
       });
+    });
+  }
+
+  /* -------------------------------------------------------- material maps */
+
+  const M = { pattern: 0, seed: 7, strength: 4, radius: 6, maps: null, synthMs: 0, stale: false };
+  const TM = window.TexelMaps;
+
+  function paintMap(canvasEl, rgba, size) {
+    const c = canvasEl.getContext("2d");
+    if (!c) return;
+    canvasEl.width = size;
+    canvasEl.height = size;
+    const img = c.createImageData(size, size);
+    img.data.set(rgba);
+    c.putImageData(img, 0, 0);
+  }
+
+  function litPixels(maps) {
+    const pal = PALETTES[S.palette];
+    const shaded = TM.shade(maps, S.light, 0.75);
+    for (let i = 0; i < shaded.length; i++) shaded[i] = Math.min(1, shaded[i] * S.exposure);
+    maps.litIndex = TM.ditherToPalette(shaded, maps.size, S.levels, S.spread, S.dither, S.scan);
+    maps.litLevels = S.levels;
+    return TM.toRgba(maps, "lit", pal.stops.map((hex) => hexToRgb(hex).map((v) => Math.round(v * 255))));
+  }
+
+  function renderMaps() {
+    if (!TM || $("#panelMaps").hidden) return null;
+    if (!M.maps || M.maps.options.pattern !== M.pattern || M.maps.options.seed !== M.seed || M.maps.options.strength !== M.strength || M.maps.options.aoRadius !== M.radius) {
+      const t0 = performance.now();
+      M.maps = TM.synthesize({ pattern: M.pattern, seed: M.seed, strength: M.strength, aoRadius: M.radius });
+      M.synthMs = performance.now() - t0;
+    }
+    const maps = M.maps;
+    const size = maps.size;
+    paintMap($("#mapHeight"), TM.toRgba(maps, "height"), size);
+    paintMap($("#mapNormal"), TM.toRgba(maps, "normal"), size);
+    paintMap($("#mapAo"), TM.toRgba(maps, "ao"), size);
+    paintMap($("#mapRough"), TM.toRgba(maps, "roughness"), size);
+    const lit = litPixels(maps);
+    const litCanvas = $("#mapLit");
+    const lc = litCanvas.getContext("2d");
+    if (lc) {
+      litCanvas.width = size * 2;
+      litCanvas.height = size * 2;
+      const img = lc.createImageData(size, size);
+      img.data.set(lit);
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) lc.putImageData(img, i * size, j * size);
+    }
+    const st = maps.stats;
+    $("#statUnit").textContent = st.normalUnitError.toExponential(1);
+    $("#statSeam").textContent = st.seamJump.toFixed(6) + " / " + st.interiorJump.toFixed(6);
+    $("#statAo").textContent = st.aoMean.toFixed(3);
+    $("#statTime").textContent = M.synthMs.toFixed(1) + " ms";
+    return maps;
+  }
+
+  function exportAtlas() {
+    if (!M.maps) renderMaps();
+    if (!M.maps) return;
+    const size = M.maps.size;
+    const scale = 4;
+    const names = ["height", "normal", "ao", "roughness"];
+    const out = document.createElement("canvas");
+    out.width = size * scale * 5;
+    out.height = size * scale;
+    const ctx = out.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    const tile = document.createElement("canvas");
+    tile.width = size;
+    tile.height = size;
+    const tc = tile.getContext("2d");
+    const put = (rgba, slot) => {
+      const img = tc.createImageData(size, size);
+      img.data.set(rgba);
+      tc.putImageData(img, 0, 0);
+      ctx.drawImage(tile, slot * size * scale, 0, size * scale, size * scale);
+    };
+    names.forEach((name, i) => put(TM.toRgba(M.maps, name), i));
+    put(litPixels(M.maps), 4);
+    const name = "texelforge-maps-" + TM.PATTERNS[M.pattern].id + "-seed" + M.seed + ".png";
+    out.toBlob((blob) => {
+      if (!blob) { say("The browser could not encode the map atlas."); return; }
+      const url = URL.createObjectURL(blob);
+      const a = el("a", { href: url, download: name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      say("Saved " + name + ": height, normal, occlusion, roughness and the lit preview, " + out.width + " x " + out.height + ".");
+    }, "image/png");
+  }
+
+  function initMaps() {
+    if (!TM) return;
+    buildKeys($("#mapKeys"), "mappattern", TM.PATTERNS);
+    syncKeys("mappattern", M.pattern);
+    $("#mapKeys").addEventListener("change", (e) => { M.pattern = clamp(Math.round(+e.target.value), 0, TM.PATTERNS.length - 1); writeHashSoon(); renderMaps(); say(TM.PATTERNS[M.pattern].name + " maps synthesized."); });
+    const strength = $("#mapStrength");
+    const radius = $("#mapRadius");
+    strength.value = String(M.strength);
+    radius.value = String(M.radius);
+    $("#mapStrengthOut").textContent = String(M.strength);
+    $("#mapRadiusOut").textContent = M.radius + " texels";
+    setFill(strength);
+    setFill(radius);
+    strength.addEventListener("input", (e) => { M.strength = clamp(Math.round(+e.target.value), 1, 12); strength.value = String(M.strength); setFill(strength); $("#mapStrengthOut").textContent = String(M.strength); writeHashSoon(); renderMaps(); });
+    radius.addEventListener("input", (e) => { M.radius = clamp(Math.round(+e.target.value), 2, 12); radius.value = String(M.radius); setFill(radius); $("#mapRadiusOut").textContent = M.radius + " texels"; writeHashSoon(); renderMaps(); });
+    $("#mapSeedBtn").addEventListener("click", () => { M.seed = (M.seed * 1103515245 + 12345) % 2147483647; writeHashSoon(); renderMaps(); say("New seed " + M.seed + "."); });
+    $("#mapExportBtn").addEventListener("click", exportAtlas);
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "TEXTAREA" || (tag === "INPUT" && e.target.type === "number")) return;
+      if (e.key === "m" || e.key === "M") { e.preventDefault(); selectTab(2, true); }
     });
   }
 
@@ -1296,6 +1489,7 @@ void main() {
         S.pitch = clamp(S.pitch + drag.vy * dt, -1.45, 1.45);
         const decay = Math.pow(0.03, dt);
         drag.vx *= decay; drag.vy *= decay;
+        writeHashSoon();
         active = true;
       } else { drag.vx = drag.vy = 0; }
     }
@@ -1310,6 +1504,7 @@ void main() {
       fpsT = now;
     }
     refreshInspector(now);
+    if (M.stale) { M.stale = false; renderMaps(); }
   }
 
   /* ---------------------------------------------------------------- boot */
@@ -1319,6 +1514,7 @@ void main() {
     updatePalette();
     initTabs();
     initControls();
+    initMaps();
     initOrbit();
     if (initGL()) buildInspector();
     canvas.addEventListener("webglcontextlost", (e) => {
